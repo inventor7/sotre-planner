@@ -12,8 +12,11 @@ import {
 } from 'lucide-vue-next'
 import { useEditorStore } from '@/stores/editorStore'
 import { getTemplateById } from '@/data/fixtureTemplates'
+import type { PlacedFixture } from '@/types/editor'
 import { cn } from '@/lib/utils'
 import { toast } from 'vue-sonner'
+import RotationDial from '../shared/RotationDial.vue'
+import VerticalRuler from '../shared/VerticalRuler.vue'
 
 interface Props {
   onExit: () => void
@@ -44,12 +47,45 @@ const template = computed(() =>
 const hasSelection = computed(
   () => !!selectedFixture.value || !!selectedWall.value || !!selectedNode.value,
 )
-const canEditProducts = computed(
-  () =>
-    template.value &&
-    (template.value.category === 'shelves' || template.value.category === 'fridges'),
-)
 const hasShelfContents = computed(() => selectedFixture.value?.contents?.levels)
+
+const selectedShelfLevelId = computed(() => editorStore.selectedShelfLevelId)
+const selectedShelfLevel = computed(() => {
+  if (!selectedFixture.value?.contents?.levels || !selectedShelfLevelId.value) return null
+  return selectedFixture.value.contents.levels.find((l) => l.id === selectedShelfLevelId.value)
+})
+
+const handleShelfHeightUpdate = (val: number) => {
+  if (!selectedFixture.value || !selectedShelfLevelId.value || !selectedFixture.value.contents)
+    return
+
+  const levels = [...selectedFixture.value.contents.levels].sort((a, b) => a.height - b.height)
+  const currentIndex = levels.findIndex((l) => l.id === selectedShelfLevelId.value)
+  if (currentIndex === -1) return
+
+  const prevHeight = currentIndex > 0 ? levels[currentIndex - 1]?.height || 0 : 0
+  const nextHeight =
+    currentIndex < levels.length - 1
+      ? levels?.[currentIndex + 1]?.height || 0
+      : selectedFixture.value.height3D || 200
+
+  // Constraints
+  const minSpacing = 10 // Minimum clear space 10cm
+  const thickness = 2 // Shelf thickness 2cm
+
+  const minAllowed = prevHeight + minSpacing + thickness
+  const maxAllowed = nextHeight - minSpacing - thickness
+
+  // Clamp value
+  const newHeight = Math.max(minAllowed, Math.min(maxAllowed, val))
+
+  const newLevels = levels.map((l) => {
+    if (l.id === selectedShelfLevelId.value) return { ...l, height: newHeight }
+    return l
+  })
+
+  editorStore.updateFixtureContents(selectedFixture.value.id, { levels: newLevels })
+}
 
 const colorPresets = [
   '#8B7355',
@@ -69,22 +105,6 @@ const colorPresets = [
   '#FFFFFF',
   '#FFD700',
 ]
-
-const handleWidthChange = (event: Event) => {
-  const target = event.target as HTMLInputElement
-  const num = parseInt(target.value)
-  if (!isNaN(num) && num > 0 && editorStore.selectedFixtureId) {
-    editorStore.updateFixture(editorStore.selectedFixtureId, { width: num })
-  }
-}
-
-const handleHeightChange = (event: Event) => {
-  const target = event.target as HTMLInputElement
-  const num = parseInt(target.value)
-  if (!isNaN(num) && num > 0 && editorStore.selectedFixtureId) {
-    editorStore.updateFixture(editorStore.selectedFixtureId, { height: num })
-  }
-}
 
 const handleColorChange = (color: string) => {
   if (editorStore.selectedFixtureId) {
@@ -127,10 +147,20 @@ const handleNodeYChange = (event: Event) => {
 const handleShelfRowsChange = (delta: number) => {
   if (!selectedFixture.value?.contents || !editorStore.selectedFixtureId) return
 
-  const currentLevels = selectedFixture.value.contents.levels
+  const currentLevels = [...selectedFixture.value.contents.levels].sort(
+    (a, b) => (a.height || 0) - (b.height || 0),
+  )
+  const totalHeight = selectedFixture.value.height3D || 200
+
+  let newLevels = []
 
   if (delta > 0) {
-    // Add a new level
+    if (currentLevels.length >= 10) return
+
+    // Add logic: Redistribute
+    const newCount = currentLevels.length + 1
+    const spacing = totalHeight / (newCount + 1)
+
     const newLevel = {
       id: Math.random().toString(36).substr(2, 9),
       slots: [
@@ -141,17 +171,53 @@ const handleShelfRowsChange = (delta: number) => {
           priceLabel: false,
         },
       ],
+      height: 0, // Will be set below
     }
-    editorStore.updateFixtureContents(editorStore.selectedFixtureId, {
-      levels: [...currentLevels, newLevel],
-    })
-  } else if (currentLevels.length > 1) {
-    // Remove last level
-    editorStore.updateFixtureContents(editorStore.selectedFixtureId, {
-      levels: currentLevels.slice(0, -1),
-    })
+
+    // Append to end
+    newLevels = [...currentLevels, newLevel]
+
+    // Redistribute
+    newLevels = newLevels.map((l, index) => ({
+      ...l,
+      height: Math.round((index + 1) * spacing),
+    }))
+  } else {
+    if (currentLevels.length <= 1) return
+
+    // Remove last one (top-most)
+    newLevels = currentLevels.slice(0, -1)
+
+    // Redistribute remaining to fill space
+    const newCount = newLevels.length
+    const spacing = totalHeight / (newCount + 1)
+    newLevels = newLevels.map((l, index) => ({
+      ...l,
+      height: Math.round((index + 1) * spacing),
+    }))
+  }
+
+  editorStore.updateFixtureContents(selectedFixture.value.id, { levels: newLevels })
+}
+
+const handleUpdate = (id: string, updates: Partial<PlacedFixture>) => {
+  editorStore.updateFixture(id, updates)
+}
+
+const handleRotate = (id: string | undefined, value: number) => {
+  if (!id) return
+  editorStore.updateFixture(id, { rotation: value })
+}
+
+const handleSaveTemplate = () => {
+  if (!selectedFixture.value) return
+  const name = window.prompt('Enter a name for this template:', 'My Custom Fixture')
+  if (name) {
+    editorStore.saveCustomTemplate(selectedFixture.value, name)
+    toast.success('Template saved to library')
   }
 }
+
 const isExpanded = ref(true)
 
 const toggleExpanded = () => {
@@ -216,6 +282,12 @@ const toggleExpanded = () => {
                 <h3 class="text-sm font-bold leading-none">
                   {{ selectedFixture ? template?.name : selectedWall ? 'Wall' : 'Wall Node' }}
                 </h3>
+                <p
+                  v-if="selectedFixture"
+                  class="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-1"
+                >
+                  {{ selectedFixture.width }}w × {{ selectedFixture.height3D || 0 }}h cm
+                </p>
               </div>
             </div>
             <component
@@ -227,46 +299,136 @@ const toggleExpanded = () => {
 
           <div v-if="isExpanded" class="space-y-6 animate-in slide-in-from-top-2 duration-300">
             <!-- Fixture Properties -->
-            <div v-if="selectedFixture && template" class="space-y-4">
-              <div class="grid grid-cols-2 gap-4">
-                <div class="space-y-1.5">
-                  <label
-                    class="text-[11px] font-bold text-muted-foreground uppercase tracking-wider"
-                    >Width (cm)</label
-                  >
-                  <div class="relative">
+            <div v-if="selectedFixture && template" class="space-y-6">
+              <!-- Dimensions Grid -->
+              <div class="grid grid-cols-3 gap-3">
+                <!-- Width -->
+                <div
+                  class="flex flex-col items-center gap-2"
+                  :class="{ 'opacity-30 pointer-events-none': selectedShelfLevelId }"
+                >
+                  <div class="relative w-full">
                     <input
                       type="number"
                       :value="selectedFixture.width"
-                      @input="handleWidthChange"
-                      class="h-10 w-full pl-3 pr-8 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm transition-all"
+                      @input="
+                        (e) =>
+                          selectedFixture &&
+                          handleUpdate(selectedFixture.id, {
+                            width: parseInt((e.target as HTMLInputElement).value) || 0,
+                          })
+                      "
+                      class="w-full h-9 bg-muted/50 border border-border rounded-lg text-xs font-bold text-center outline-hidden focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all tabular-nums"
                     />
-                    <div
-                      class="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-muted-foreground"
+                    <span
+                      class="absolute right-1.5 top-1/2 -translate-y-1/2 text-[8px] font-bold text-muted-foreground uppercase pointer-events-none"
+                      >w</span
                     >
-                      W
-                    </div>
                   </div>
-                </div>
-                <div class="space-y-1.5">
-                  <label
-                    class="text-[11px] font-bold text-muted-foreground uppercase tracking-wider"
-                    >Depth (cm)</label
+                  <VerticalRuler
+                    :model-value="selectedFixture.width"
+                    @update:model-value="
+                      (val: number) =>
+                        selectedFixture && handleUpdate(selectedFixture.id, { width: val })
+                    "
+                    :min="10"
+                    :max="1000"
+                  />
+                  <span class="text-[8px] font-bold text-muted-foreground uppercase tracking-widest"
+                    >Width</span
                   >
-                  <div class="relative">
+                </div>
+
+                <!-- Depth -->
+                <div
+                  class="flex flex-col items-center gap-2"
+                  :class="{ 'opacity-30 pointer-events-none': selectedShelfLevelId }"
+                >
+                  <div class="relative w-full">
                     <input
                       type="number"
                       :value="selectedFixture.height"
-                      @input="handleHeightChange"
-                      class="h-10 w-full pl-3 pr-8 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm transition-all"
+                      @input="
+                        (e) =>
+                          selectedFixture &&
+                          handleUpdate(selectedFixture.id, {
+                            height: parseInt((e.target as HTMLInputElement).value) || 0,
+                          })
+                      "
+                      class="w-full h-9 bg-muted/50 border border-border rounded-lg text-xs font-bold text-center outline-hidden focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all tabular-nums"
                     />
-                    <div
-                      class="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-muted-foreground"
+                    <span
+                      class="absolute right-1.5 top-1/2 -translate-y-1/2 text-[8px] font-bold text-muted-foreground uppercase pointer-events-none"
+                      >d</span
                     >
-                      D
-                    </div>
                   </div>
+                  <VerticalRuler
+                    :model-value="selectedFixture.height"
+                    @update:model-value="
+                      (val: number) =>
+                        selectedFixture && handleUpdate(selectedFixture.id, { height: val })
+                    "
+                    :min="10"
+                    :max="1000"
+                  />
+                  <span class="text-[8px] font-bold text-muted-foreground uppercase tracking-widest"
+                    >Depth</span
+                  >
                 </div>
+
+                <!-- Height -->
+                <div class="flex flex-col items-center gap-2">
+                  <div class="relative w-full">
+                    <input
+                      type="number"
+                      :value="
+                        selectedShelfLevelId
+                          ? Math.round(selectedShelfLevel?.height || 0)
+                          : selectedFixture.height3D
+                      "
+                      @input="
+                        (e) => {
+                          const val = parseInt((e.target as HTMLInputElement).value) || 0
+                          if (selectedShelfLevelId) handleShelfHeightUpdate(val)
+                          else
+                            selectedFixture && handleUpdate(selectedFixture.id, { height3D: val })
+                        }
+                      "
+                      class="w-full h-9 bg-muted/50 border border-border rounded-lg text-xs font-bold text-center outline-hidden focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all tabular-nums"
+                    />
+                    <span
+                      class="absolute right-1.5 top-1/2 -translate-y-1/2 text-[8px] font-bold text-muted-foreground uppercase pointer-events-none"
+                      >h</span
+                    >
+                  </div>
+                  <VerticalRuler
+                    :model-value="
+                      selectedShelfLevelId
+                        ? selectedShelfLevel?.height || 0
+                        : selectedFixture.height3D
+                    "
+                    @update:model-value="
+                      (val: number) => {
+                        if (selectedShelfLevelId) handleShelfHeightUpdate(val)
+                        else selectedFixture && handleUpdate(selectedFixture.id, { height3D: val })
+                      }
+                    "
+                    :min="selectedShelfLevelId ? 0 : 10"
+                    :max="selectedShelfLevelId ? selectedFixture.height3D || 300 : 300"
+                  />
+                  <span
+                    class="text-[8px] font-bold text-muted-foreground uppercase tracking-widest"
+                    >{{ selectedShelfLevelId ? 'Level Y' : 'Height' }}</span
+                  >
+                </div>
+              </div>
+
+              <!-- Rotation Dial -->
+              <div class="space-y-2">
+                <RotationDial
+                  :model-value="selectedFixture.rotation"
+                  @update:model-value="(val: number) => handleRotate(selectedFixture?.id, val)"
+                />
               </div>
 
               <!-- Shelf Controls -->
@@ -332,14 +494,13 @@ const toggleExpanded = () => {
                 </div>
               </div>
 
-              <!-- Action Buttons -->
-              <div v-if="canEditProducts" class="pt-2">
+              <div class="pt-4 border-t border-border">
                 <button
-                  class="w-full h-11 rounded-xl bg-accent text-white flex items-center justify-center gap-3 font-bold text-sm shadow-lg shadow-accent/20 active:scale-95 transition-all"
-                  @click="editorStore.openProductEditor(editorStore.selectedFixtureId!)"
+                  @click="handleSaveTemplate"
+                  class="w-full h-9 bg-primary/10 hover:bg-primary/20 text-primary text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-2"
                 >
-                  <LucidePackage :size="20" />
-                  Edit Products
+                  <LucideSave :size="14" />
+                  Save as Template
                 </button>
               </div>
             </div>

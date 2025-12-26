@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Plus as LucidePlus, Copy as LucideCopy, Trash2 as LucideTrash2 } from 'lucide-vue-next'
+import {
+  Plus as LucidePlus,
+  Copy as LucideCopy,
+  Trash2 as LucideTrash2,
+  Eye as LucideEye,
+  EyeOff as LucideEyeOff,
+} from 'lucide-vue-next'
 import { useEditorStore } from '@/stores/editorStore'
 import { cn } from '@/lib/utils'
 
@@ -84,5 +90,26 @@ const handleDelete = () => {
         <span class="font-medium text-[8px] sm:text-[10px]">Del</span>
       </button>
     </template>
+
+    <div class="mt-auto flex flex-col gap-1 sm:gap-2">
+      <!-- View Toggle -->
+      <button
+        v-if="hasSelection"
+        @click="editorStore.setViewModeOpen(!editorStore.isViewModeOpen)"
+        class="group flex flex-col items-center justify-center gap-1 w-14 h-14 sm:w-16 sm:h-16 rounded-xl transition-all"
+        :class="
+          editorStore.isViewModeOpen
+            ? 'bg-primary text-white shadow-lg shadow-primary/20'
+            : 'hover:bg-muted text-muted-foreground'
+        "
+      >
+        <component
+          :is="editorStore.isViewModeOpen ? LucideEyeOff : LucideEye"
+          :size="20"
+          class="sm:w-6 sm:h-6"
+        />
+        <span class="text-[9px] sm:text-[10px] font-bold uppercase tracking-tight">View</span>
+      </button>
+    </div>
   </div>
 </template>

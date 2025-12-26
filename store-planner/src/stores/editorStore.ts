@@ -11,6 +11,7 @@ import type {
   ShelfSlot,
   WallNode,
   StructureType,
+  FixtureTemplate,
 } from '@/types/editor'
 import { getTemplateById } from '@/data/fixtureTemplates'
 
@@ -32,6 +33,7 @@ const createDefaultContents = (shelves: number = 4): FixtureContents => ({
   levels: Array.from({ length: shelves }, (_, i) => ({
     id: generateId(),
     slots: [{ id: generateId(), productId: null, facings: 1, priceLabel: false }],
+    height: (i + 1) * 40,
   })),
 })
 
@@ -41,6 +43,7 @@ export const useEditorStore = defineStore(
     // State
     const currentLayout = ref<StoreLayout | null>(null)
     const savedLayouts = ref<StoreLayout[]>([])
+    const customTemplates = ref<FixtureTemplate[]>([])
 
     const selectedFixtureId = ref<string | null>(null)
     const selectedWallId = ref<string | null>(null)
@@ -54,10 +57,13 @@ export const useEditorStore = defineStore(
     const panOffset = ref({ x: 0, y: 0 })
 
     const isLibraryOpen = ref(false)
-    const libraryCategory = ref<FixtureCategory | 'all'>('all')
+    const libraryCategory = ref<FixtureCategory | 'all' | 'my-templates'>('all')
 
     const isProductEditorOpen = ref(false)
     const editingFixtureId = ref<string | null>(null)
+    const viewMode = ref<'top' | 'face'>('top')
+    const isViewModeOpen = ref(false)
+    const selectedShelfLevelId = ref<string | null>(null)
 
     // Layout actions
     const createNewLayout = (name: string, width: number, height: number) => {
@@ -213,7 +219,10 @@ export const useEditorStore = defineStore(
 
     // Fixture actions
     const addFixture = (templateId: string, x: number, y: number) => {
-      const template = getTemplateById(templateId)
+      let template = getTemplateById(templateId)
+      if (!template) {
+        template = customTemplates.value.find((t) => t.id === templateId)
+      }
       if (!template) return
 
       const fixture: PlacedFixture = {
@@ -224,8 +233,10 @@ export const useEditorStore = defineStore(
         rotation: 0,
         width: template.width,
         height: template.height,
-        contents:
-          template.category === 'shelves' || template.category === 'fridges'
+        height3D: template.totalHeight || 200,
+        contents: template.defaultContents
+          ? JSON.parse(JSON.stringify(template.defaultContents))
+          : template.category === 'shelves' || template.category === 'fridges'
             ? createDefaultContents(template.shelves || 4)
             : undefined,
       }
@@ -270,15 +281,20 @@ export const useEditorStore = defineStore(
       selectedFixtureId.value = newFixture.id
     }
 
-    const rotateFixture = (id: string) => {
+    const rotateFixture = (id: string, delta?: number) => {
       if (!currentLayout.value) return
       const fixture = currentLayout.value.fixtures.find((f) => f.id === id)
       if (fixture) {
-        const newRotation = (fixture.rotation + 90) % 360
-        fixture.rotation = newRotation
-        const temp = fixture.width
-        fixture.width = fixture.height
-        fixture.height = temp
+        if (delta !== undefined) {
+          fixture.rotation = (fixture.rotation + delta) % 360
+          if (fixture.rotation < 0) fixture.rotation += 360
+        } else {
+          const newRotation = (fixture.rotation + 90) % 360
+          fixture.rotation = newRotation
+          const temp = fixture.width
+          fixture.width = fixture.height
+          fixture.height = temp
+        }
       }
     }
 
@@ -395,6 +411,39 @@ export const useEditorStore = defineStore(
       libraryCategory.value = category
     }
 
+    const toggleViewMode = () => {
+      viewMode.value = viewMode.value === 'top' ? 'face' : 'top'
+    }
+
+    const setViewModeOpen = (open: boolean) => {
+      isViewModeOpen.value = open
+    }
+
+    const selectShelfLevel = (id: string | null) => {
+      selectedShelfLevelId.value = id
+    }
+
+    const saveCustomTemplate = (fixture: PlacedFixture, name: string) => {
+      const tmpl = getTemplateById(fixture.templateId)
+      const newTmpl: FixtureTemplate = {
+        id: generateId(),
+        name,
+        category: tmpl ? tmpl.category : 'shelves',
+        width: fixture.width,
+        height: fixture.height,
+        totalHeight: fixture.height3D,
+        color: fixture.customColor || tmpl?.color || '#8B7355',
+        defaultContents: fixture.contents,
+        description: 'Custom Template',
+      }
+      customTemplates.value.push(newTmpl)
+      updateFixture(fixture.id, { templateId: newTmpl.id })
+    }
+
+    const deleteCustomTemplate = (id: string) => {
+      customTemplates.value = customTemplates.value.filter((t) => t.id !== id)
+    }
+
     // Helpers
     const getNodePosition = (nodeId: string): { x: number; y: number } | null => {
       if (!currentLayout.value) return null
@@ -482,6 +531,10 @@ export const useEditorStore = defineStore(
       libraryCategory,
       isProductEditorOpen,
       editingFixtureId,
+      viewMode,
+      isViewModeOpen,
+      selectedShelfLevelId,
+      customTemplates,
 
       // Layout actions
       createNewLayout,
@@ -535,6 +588,11 @@ export const useEditorStore = defineStore(
       openLibrary,
       closeLibrary,
       setLibraryCategory,
+      toggleViewMode,
+      setViewModeOpen,
+      selectShelfLevel,
+      saveCustomTemplate,
+      deleteCustomTemplate,
 
       // Helpers
       getNodePosition,
@@ -545,7 +603,7 @@ export const useEditorStore = defineStore(
   },
   {
     persist: {
-      pick: ['savedLayouts'],
+      pick: ['savedLayouts', 'customTemplates'],
     },
   },
 )

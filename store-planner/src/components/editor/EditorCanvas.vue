@@ -130,6 +130,9 @@ const handleCanvasClick = (e: MouseEvent) => {
     editorStore.selectFixture(null)
     editorStore.selectWall(null)
     editorStore.selectNode(null)
+    if (editorStore.isViewModeOpen) {
+      editorStore.setViewModeOpen(false)
+    }
   }
 }
 

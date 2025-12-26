@@ -1,4 +1,10 @@
-export type FixtureCategory = 'shelves' | 'fridges' | 'checkout' | 'structures' | 'furniture'
+export type FixtureCategory =
+  | 'shelves'
+  | 'fridges'
+  | 'checkout'
+  | 'structures'
+  | 'furniture'
+  | 'my-templates'
 
 export type StructureType = 'wall' | 'door' | 'window'
 
@@ -22,6 +28,7 @@ export interface ShelfSlot {
 export interface ShelfLevel {
   id: string
   slots: ShelfSlot[]
+  height: number // cm from bottom
 }
 
 export interface FixtureContents {
@@ -37,7 +44,9 @@ export interface FixtureTemplate {
   color: string
   shelves?: number
   doors?: number
+  totalHeight?: number // 3D height in cm
   description?: string
+  defaultContents?: FixtureContents
 }
 
 export interface PlacedFixture {
@@ -48,6 +57,7 @@ export interface PlacedFixture {
   rotation: number // 0, 90, 180, 270
   width: number
   height: number
+  height3D: number
   customColor?: string
   contents?: FixtureContents
 }
@@ -99,10 +109,12 @@ export interface EditorState {
   zoom: number
   panOffset: { x: number; y: number }
   isLibraryOpen: boolean
-  libraryCategory: FixtureCategory | 'all'
+  libraryCategory: FixtureCategory | 'all' | 'my-templates'
   savedLayouts: StoreLayout[]
   isProductEditorOpen: boolean
   editingFixtureId: string | null
   isDrawingWall: boolean
   drawingStartNodeId: string | null
+  viewMode: 'top' | 'face'
+  isViewModeOpen: boolean
 }

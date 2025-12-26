@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { X as LucideX, Search as LucideSearch } from 'lucide-vue-next'
+import { X as LucideX } from 'lucide-vue-next'
 import { useEditorStore } from '@/stores/editorStore'
 import { categoryLabels, getTemplatesByCategory } from '@/data/fixtureTemplates'
 import type { FixtureCategory, FixtureTemplate } from '@/types/editor'
 import FixtureSVG from './FixtureSVG.vue'
 import { cn } from '@/lib/utils'
 
-const categories: (FixtureCategory | 'all')[] = [
+const categories: (FixtureCategory | 'all' | 'my-templates')[] = [
   'all',
+  'my-templates',
   'shelves',
   'fridges',
   'checkout',
@@ -21,7 +22,13 @@ const editorStore = useEditorStore()
 const searchQuery = ref('')
 
 const filteredTemplates = computed(() => {
-  let templates = getTemplatesByCategory(editorStore.libraryCategory)
+  let templates: FixtureTemplate[] = []
+
+  if (editorStore.libraryCategory === 'my-templates') {
+    templates = editorStore.customTemplates
+  } else {
+    templates = getTemplatesByCategory(editorStore.libraryCategory)
+  }
 
   if (searchQuery.value.trim()) {
     const query = searchQuery.value.toLowerCase()
@@ -100,7 +107,9 @@ const getPreviewScale = (template: FixtureTemplate) => {
             )
           "
         >
-          {{ categoryLabels[cat] }}
+          {{
+            cat === 'my-templates' ? 'My Templates' : categoryLabels[cat as FixtureCategory | 'all']
+          }}
         </button>
       </div>
     </div>
